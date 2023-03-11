@@ -5,6 +5,28 @@ def str2datetime(s):
     dte = datetime.datetime.strptime(s, "%Y%m%d%H%M%S")
     return dte
 
+#サブネットは[192, 174, 25]のようなリストで保持し、そのリストのリストを返す
+def get_subnet_list(failures):
+    subnets = []
+    for failure in failures:
+        #一旦splitして比較（桁が違うかもなので）
+        [address, t1, t2] = failure
+        split_address = address.split('.')
+        subnet = split_address[:3]
+        if subnet not in subnets:
+            subnets.append(subnet)
+    #splitしたものをjoin
+    subnets = list(map(lambda x: ".".join(x), subnets))
+    return subnets
+
+def get_address_list(logs):
+    addresses = []
+    for log in logs:
+        [date, address, response] = log
+        if address not in addresses:
+            addresses.append(address)
+    return addresses
+
 def print_failure(failure_log):
     [address, start_datetime, end_datetime] = failure_log
     print(f'故障サーバ: {address}, 故障期間: {start_datetime} ~ {end_datetime}')
@@ -12,6 +34,12 @@ def print_failure(failure_log):
 def print_overload(overload_log):
     [address, start_datetime, end_datetime] = overload_log
     print(f'過負荷サーバ: {address}, 過負荷期間: {start_datetime} ~ {end_datetime}')
+
+def print_failure_subnet(failure_subnet_log):
+    [subnet, start_datetime, end_datetime] = failure_subnet_log
+    print(f'故障サブネット: {subnet}, 故障期間: {start_datetime} ~ {end_datetime}')
+
+
 
 # ある一つのサーバのlog（タプル）のリストを受け取る
 # サーバアドレスと故障期間（開始時刻と終了時刻）のタプル　のリストを返す
@@ -85,18 +113,51 @@ def check_overload_a_server(logs, m, t):
     return overloads
 
 
+def check_failure_a_subnet(subnet, addresses, failures):
+    matching_address = list(filter(lambda x: x[:len(subnet)] == subnet, addresses))
+    
+    #一つのサーバのfailureを取り出す
+    failures_of_a_address = list(filter(lambda x: x[0] == matching_address[0], failures))
+    failures_of_other_address = list(filter(lambda x: x[0] != matching_address[0], failures))
+
+    failures_subnet = []
+
+    for failure in failures_of_a_address:
+        [address, start_time, end_time] = failure
+
+        for failure2 in failures_of_other_address:
+            [address2, start_time2, end_time2] = failure2
+            
+            failure_subnet = []
+            if end_time == "現在":
+                if start_time < start_time2:
+                    failure_subnet = [subnet, start_time, end_time2]
+                elif end_time2 != "現在" and start_time < end_time2:
+                    failure_subnet = [subnet, end_time2, end_time]
+            else:
+                if end_time2 == "現在":
+                    if start_time2 < end_time:
+                        failure_subnet = [subnet, end_time, end_time2]
+                else:
+                    common_start = max(start_time, start_time2)
+                    common_end = min(end_time, end_time2)
+                    if common_start <= common_end:
+                        failure_subnet = [subnet, common_start, common_end]
+            
+            #共通範囲が存在する場合
+            if failure_subnet != []:
+                failures_subnet.append(failure_subnet)
+
+    return failures_subnet
+
+
 
 
 def parse_logs_all(logs, n, m ,t):
 
-    addresses = []
+    addresses = get_address_list(logs)
 
-    for log in logs:
-        [date, address, response] = log
-
-        if address not in addresses:
-            addresses.append(address)
-
+    all_failures = []
 
     # 各サーバごとにログを切り分け、それぞれでチェックしていく実装
     for address in addresses:
@@ -105,11 +166,17 @@ def parse_logs_all(logs, n, m ,t):
         failures = check_failure_a_server(logs_of_a_server, n)
         for failure in failures:
             print_failure(failure)
+            all_failures.append(failure)
 
         overloads = check_overload_a_server(logs_of_a_server, m, t)
         for overload in overloads:
             print_overload(overload)
 
+    subnets = get_subnet_list(all_failures)
+    for subnet in subnets:
+        failures_subnet = check_failure_a_subnet(subnet, addresses, all_failures)
+        for failure_subnet in failures_subnet:
+            print_failure_subnet(failure_subnet)
 
 
 
