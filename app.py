@@ -5,7 +5,7 @@ def str2datetime(s):
     dte = datetime.datetime.strptime(s, "%Y%m%d%H%M%S")
     return dte
 
-#サブネットは[192, 174, 25]のようなリストで保持し、そのリストのリストを返す
+#サブネットは[192, 174, 25]のようなリストで一旦保持し、その後joinしてリストを返す
 def get_subnet_list(failures):
     subnets = []
     for failure in failures:
@@ -85,6 +85,7 @@ def check_overload_a_server(logs, m, t):
         [date, address, response] = log
 
         if response == '-':
+            sum = 0
             count = 0
         else:
             sum += int(response)
@@ -92,18 +93,25 @@ def check_overload_a_server(logs, m, t):
 
             #直近で過負荷が起きているかチェック
             if count >= m:
+                if count > m:
+                    sum -= int(sorted_logs[i - m][2])    #m+1回前のログの応答時間をひく
                 #ここまでで既に過負荷
                 if isOverload:
                     #ここで過負荷じゃなくなる場合
-                    if sum / count < t:
+                    if sum / m < t:
                         overloads.append([address, str2datetime(sorted_logs[i - count + 1][0]), str2datetime(date)])
                         isOverload = False
+                        sum = 0
                     #まだ過負荷が続くなら何もしない（次に回す）
 
                 #ここまでは過負荷でなかった
                 else:
-                    if sum / count >= t:
+                    if sum / m >= t:
                         isOverload = True
+                    else:
+                        #今のログを加えて過負荷でないなら、（次のために）m回前のログを消す
+                        sum -= int(sorted_logs[i - m + 1][2])
+                        count -= 1
     #end for
     
     #現在も過負荷の場合の処理
